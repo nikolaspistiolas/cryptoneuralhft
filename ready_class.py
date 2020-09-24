@@ -50,7 +50,7 @@ class DataPreprocessing():
                 ret.append(i)
         return ret
 
-    def minmax(self):
+    def minmaxmean(self):
         c = 0
         col = self.db['depth' + str(self.depth)]
         col2 = self.db['minmax']
@@ -70,11 +70,16 @@ class DataPreprocessing():
         max_size = 0
         for d in data:
             c += 1
-            time = d['_id']
             work.append(d)
             work = self.keep_work(work, d['_id'])
+            sum_size = 0
+            sum_price = 0
+            count = 0
             for i in work:
                 for j in i['asks']:
+                    sum_price += j['price']
+                    sum_size += j['size']
+                    count += 1
                     if j['size'] < min_size:
                         min_size = j['size']
                     if j['size'] > max_size:
@@ -84,6 +89,9 @@ class DataPreprocessing():
                     if j['price'] > max_price:
                         max_price = j['price']
                 for j in i['bids']:
+                    sum_price += j['price']
+                    sum_size += j['size']
+                    count += 1
                     if j['size'] < min_size:
                         min_size = j['size']
                     if j['size'] > max_size:
@@ -97,7 +105,7 @@ class DataPreprocessing():
                 if max_size == min_size:
                     print('size oops')
             up = copy.deepcopy(d)
-            up['minmax'] = {'minprice':min_price,'maxprice':max_price,'minsize':min_size,'maxsize':max_size}
+            up['minmax'] = {'minprice':min_price,'maxprice':max_price,'meanprice':sum_price/count,'minsize':min_size,'maxsize':max_size,'meansize':sum_size/count}
             col2.insert_one(up)
             if c % 10000 == 0 :
                 print(c)
@@ -115,16 +123,18 @@ class DataPreprocessing():
             max_price = j['minmax']['maxprice']
             min_size = j['minmax']['minsize']
             max_size = j['minmax']['maxsize']
+            mean_price = j['minmax']['meanprice']
+            mean_size = j['minmax']['meansize']
             up = copy.deepcopy(j)
             try:
                 for i in up['asks']:
 
-                    i['price'] = (i['price'] - min_price) / (max_price - min_price)
-                    i['size'] = (i['size'] - min_size) / (max_size - min_size)
+                    i['price'] = (i['price'] - mean_price) / (max_price - min_price)
+                    i['size'] = (i['size'] - mean_size) / (max_size - min_size)
 
                 for i in up['bids']:
-                    i['price'] = (i['price'] - min_price) / (max_price - min_price)
-                    i['size'] = (i['size'] - min_size) / (max_size - min_size)
+                    i['price'] = (i['price'] - mean_price) / (max_price - min_price)
+                    i['size'] = (i['size'] - mean_size) / (max_size - min_size)
                 col2.insert_one(up)
             except:
                 print(max_price,max_size,min_price,min_size,up['_id'])
@@ -170,17 +180,17 @@ class DataPreprocessing():
             counter +=1
             if counter == 100:
                 break
-        meanlist = [10, 20, 50, 100]
+        meanlist = [1, 2, 5, 10]
         for i in data:
             counter +=1
             work = work[1:]
             work.append(i)
             means = self.mean(work,meanlist)
             up = copy.deepcopy(work[0])
-            up['mid10'] = means[0]
-            up['mid20']= means[1]
-            up['mid50']= means[2]
-            up['mid100']= means[3]
+            up['mid1'] = means[0]
+            up['mid2']= means[1]
+            up['mid5']= means[2]
+            up['mid10']= means[3]
             col2.insert_one(up)
             if counter % 10000 == 0:
                 print(counter)
@@ -210,52 +220,55 @@ class DataPreprocessing():
             if counter % 10000 == 0 : print(counter)
             col2.insert_one(u)
         return
-dbs = ['shrimpy_binance_eos_btc']#,'shrimpy_binance_eth_btc','shrimpy_binance_neo_eth','shrimpy_bitfinex_ios_usd','shrimpy_hitbtc_btc_usd','shrimpy_hitbtc_eth_btc','shrimpy_hitbtc_storj_eth','shrimpy_hitbtc_xmr_usd','shrimpy_huobi_ada_usd','shrimpy_huobi_zec_usd','shrimpy_okex_dash_usd','shrimpy_okex_etc_btc','shrimpy_okex_qtum_eth','shrimpy_okex_xem_btc']#,'shrimpy_hitbtc_neo_usd']
-#dbs = ['shrimpy_bitfinex_ios_usd','shrimpy_hitbtc_btc_usd','shrimpy_hitbtc_eth_btc','shrimpy_hitbtc_storj_eth','shrimpy_hitbtc_xmr_usd','shrimpy_huobi_ada_usd','shrimpy_huobi_zec_usd','shrimpy_okex_dash_usd','shrimpy_okex_etc_btc','shrimpy_okex_qtum_eth','shrimpy_okex_xem_btc','shrimpy_hitbtc_neo_usd']
-flag = True
-for i in dbs:
-    print(i)
-    a = DataPreprocessing(i, initial_col='alldatatimeless', depth=20)
-    a.minmax()
-    # a.normfortime(1)
-    # a.create_midprice()
-    # a.smooth_midprices()
-    # a.create_percentages()
-#
-# client = pymongo.MongoClient('localhost',27017)
-# db = client[dbs[1]]
-# col1 = db['depth20']
-# col2 = db['normalized_depth20']
-#
-# norm = col2.find_one({'_id':1515132071.0})
-# d = col1.find({'_id':{'$gt':1515132071.0-24*60*60-100},'_id':{'$lt':1515132072.0}})
-# pmin = vmin = 100000000
-# pmax = vmax = 0
-# for i in d:
-#     for j in i['asks']:
-#         if j['price'] > pmax:
-#             pmax = j['price']
-#         if j['price'] < pmin:
-#             pmin = j['price']
-#         if j['size'] > vmax:
-#             vmax = j['size']
-#         if j['size'] < vmin:
-#             vmin = j['size']
-#     for j in i['bids']:
-#         if j['price'] > pmax:
-#             pmax = j['price']
-#         if j['price'] < pmin:
-#             pmin = j['price']
-#         if j['size'] > vmax:
-#             vmax = j['size']
-#         if j['size'] < vmin:
-#             vmin = j['size']
-# work = col1.find_one({'_id':1515132071.0})
-# for j in work['asks']:
-#     j['price']  = (j['price'] - pmin)/(pmax - pmin)
-#     j['size'] = (j['size'] - vmin)/(vmax - vmin)
-# for j in work['bids']:
-#     j['price']  = (j['price'] - pmin)/(pmax - pmin)
-#     j['size'] = (j['size'] - vmin)/(vmax - vmin)
-# print(work)
-# print(norm)
+
+    def fill_entries(self):
+        col = self.db['percentages']
+        col2 = self.db['zero_filled']
+        data = col.find()
+        prevtime = col.find_one()['_id']
+        for i in data:
+            time = i['_id']
+            t = time-prevtime-30
+            t = float(t)/60.0
+            t = int(t)
+            prevtime = time
+            if t > 0:
+                for j in range(t):
+                    time += 60
+                    col2.insert_one({'_id':time,'is_zero':True})
+            up = copy.deepcopy(i)
+            up['is_zero']=False
+            col2.insert_one(up)
+
+    def create_entries(self):
+        col = self.db['zero_filled']
+        col2 = self.db['entries']
+        data = col.find()
+        work = []
+        for _ in range(110):
+            work.append(data.next())
+        for i in data:
+            work = work[1:]
+            work.append(i)
+            inp = []
+            for j in work:
+                bids = []
+                for b in j['bids']:
+                    bids.append(b['price'])
+                    bids.append(b['size'])
+                asks = []
+                for a in j['asks']:
+                    asks = asks + a['price']
+                    asks = asks + a['size']
+                inp.append(asks + bids)
+            up = copy.deepcopy(i)
+            up['input'] = inp
+            col2.insert_one(up)
+        return
+
+
+
+
+
+
+

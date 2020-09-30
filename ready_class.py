@@ -26,7 +26,8 @@ class DataPreprocessing():
         data = col1.find()
         for i in data:
             id = i['_id']
-            asks = bids = []
+            asks = []
+            bids = []
             try:
                 orderbook = i['orderbook']
             except:
@@ -43,106 +44,95 @@ class DataPreprocessing():
                 col2.insert_one(up)
         return
 
-    def keep_work(self,work,time):
-        ret = []
-        for i in work:
-            if i['_id']<= time and i['_id'] >= time - 24*60*60:
-                ret.append(i)
-        return ret
-
-    def minmaxmean(self):
+    def mean_sd(self):
         c = 0
         col = self.db['depth' + str(self.depth)]
-        col2 = self.db['minmax']
+        col2 = self.db['meansd']
         col2.delete_many({})
-        first_time = col.find_one()['_id']
         data = col.find()
         work = []
         for i in data:
             work.append(i)
-            if first_time + 24 * 60 * 60 > i['_id']:
+            if len(work) == 48*60:
                 break
-
-
-        min_price = 10000000
-        max_price = 0
-        min_size = 10000000
-        max_size = 0
-        for d in data:
+        sumx_price = 0
+        sumx_size = 0
+        sumx2_price = 0
+        sumx2_size = 0
+        count = 0
+        for i in work:
+            for j in i['asks']:
+                count += 1
+                sumx_price += j['price']
+                sumx2_price += j['price']**2
+                sumx_size += j['size']
+                sumx2_size += j['size']**2
+            for j in i['bids']:
+                count += 1
+                sumx_price += j['price']
+                sumx2_price += j['price']**2
+                sumx_size += j['size']
+                sumx2_size += j['size']**2
+        for i in data:
             c += 1
-            work.append(d)
-            work = self.keep_work(work, d['_id'])
-            sum_size = 0
-            sum_price = 0
-            count = 0
-            for i in work:
-                for j in i['asks']:
-                    sum_price += j['price']
-                    sum_size += j['size']
-                    count += 1
-                    if j['size'] < min_size:
-                        min_size = j['size']
-                    if j['size'] > max_size:
-                        max_size = j['size']
-                    if j['price'] < min_price:
-                        min_price = j['price']
-                    if j['price'] > max_price:
-                        max_price = j['price']
-                for j in i['bids']:
-                    sum_price += j['price']
-                    sum_size += j['size']
-                    count += 1
-                    if j['size'] < min_size:
-                        min_size = j['size']
-                    if j['size'] > max_size:
-                        max_size = j['size']
-                    if j['price'] < min_price:
-                        min_price = j['price']
-                    if j['price'] > max_price:
-                        max_price = j['price']
-                if max_price == min_price:
-                    print('price oops')
-                if max_size == min_size:
-                    print('size oops')
-            up = copy.deepcopy(d)
-            up['minmax'] = {'minprice':min_price,'maxprice':max_price,'meanprice':sum_price/count,'minsize':min_size,'maxsize':max_size,'meansize':sum_size/count}
+            for j in work[0]['asks']:
+                count -= 1
+                sumx_price -= j['price']
+                sumx2_price -= j['price']**2
+                sumx_size -= j['size']
+                sumx2_size -= j['size']**2
+            for j in work[0]['bids']:
+                count -= 1
+                sumx_price -= j['price']
+                sumx2_price -= j['price']**2
+                sumx_size -= j['size']
+                sumx2_size -= j['size']**2
+
+            for j in i['asks']:
+                count += 1
+                sumx_price += j['price']
+                sumx2_price += j['price']**2
+                sumx_size += j['size']
+                sumx2_size += j['size']**2
+            for j in i['bids']:
+                count += 1
+                sumx_price += j['price']
+                sumx2_price += j['price']**2
+                sumx_size += j['size']
+                sumx2_size += j['size']**2
+            work.append(i)
+            work = work[1:]
+            meanprice = sumx_price/count
+            meansize = sumx_size/count
+            sdprice = ( sumx2_price/count - meanprice**2 ) * (count/ (count-1) )
+            sdprice = sdprice **0.5
+            sdsize = (sumx2_size/count - meansize**2) * (count/ (count-1))
+            sdsize = sdsize**0.5
+            up = copy.deepcopy(i)
+            up['stats'] = {'mean_price':meanprice,'mean_size':meansize,'sd_price':sdprice,'sd_size':sdsize}
             col2.insert_one(up)
-            if c % 10000 == 0 :
+            if c % 10000 == 0:
                 print(c)
-        return
 
-    def normfortime(self,time_in_min):
+    def normalize(self):
         c = 0
-        col = self.db['minmax']
-        col2 = self.db['normalized_depth'+str(self.depth)]
-        col2.delete_many({})
-        first_time = col.find_one()['_id']
+        col = self.db['meansd']
+        col2 = self.db['normalize']
         data = col.find()
-        for j in data:
-            min_price = j['minmax']['minprice']
-            max_price = j['minmax']['maxprice']
-            min_size = j['minmax']['minsize']
-            max_size = j['minmax']['maxsize']
-            mean_price = j['minmax']['meanprice']
-            mean_size = j['minmax']['meansize']
-            up = copy.deepcopy(j)
-            try:
-                for i in up['asks']:
-
-                    i['price'] = (i['price'] - mean_price) / (max_price - min_price)
-                    i['size'] = (i['size'] - mean_size) / (max_size - min_size)
-
-                for i in up['bids']:
-                    i['price'] = (i['price'] - mean_price) / (max_price - min_price)
-                    i['size'] = (i['size'] - mean_size) / (max_size - min_size)
-                col2.insert_one(up)
-            except:
-                print(max_price,max_size,min_price,min_size,up['_id'])
+        for i in data:
+            c +=1
+            for j in i['asks']:
+                j['price'] = (j['price'] - i['stats']['mean_price'])/i['stats']['sd_price']
+                j['size'] = (j['size'] - i['stats']['mean_size']) / i['stats']['sd_size']
+            for j in i['bids']:
+                j['price'] = (j['price'] - i['stats']['mean_price'])/i['stats']['sd_price']
+                j['size'] = (j['size'] - i['stats']['mean_size']) / i['stats']['sd_size']
+            col2.insert_one(i)
             if c % 10000 == 0:
                 print(c)
 
     def create_midprice(self):
-        col = self.db['normalized_depth20']
+        col = self.db['normalize']
         col2 = self.db['midprices']
         data = col.find()
         col2.delete_many({})
@@ -157,118 +147,94 @@ class DataPreprocessing():
                 print(c)
         return
 
-    def mean(self,x:list,means:list):
-        counter = 0
-        ret = []
-        sum = 0
-        for i in x:
-            counter += 1
-            sum += i['midprice']
-            if counter in means:
-                ret.append(sum/counter)
-        return ret
-
-    def smooth_midprices(self):
-        col = self.db['midprices']
-        col2 = self.db['smooth_midprices']
-        data = col.find()
-        col2.delete_many({})
-        work = []
-        counter = 0
-        for i in data:
-            work.append(i)
-            counter +=1
-            if counter == 100:
-                break
-        meanlist = [1, 2, 5, 10]
-        for i in data:
-            counter +=1
-            work = work[1:]
-            work.append(i)
-            means = self.mean(work,meanlist)
-            up = copy.deepcopy(work[0])
-            up['mid1'] = means[0]
-            up['mid2']= means[1]
-            up['mid5']= means[2]
-            up['mid10']= means[3]
-            col2.insert_one(up)
-            if counter % 10000 == 0:
-                print(counter)
-        return
-
     def create_percentages(self):
-        col = self.db['smooth_midprices']
+        col = self.db['midprices']
         col2 = self.db['percentages']
         col2.delete_many({})
         data = col.find()
-        counter = 0
-        counter2 = 0
+        c = 0
+        work = []
+        work.append(data.next())
+        work.append(data.next())
+        work.append(data.next())
+        work.append(data.next())
         for i in data:
-            counter += 1
-            u = copy.deepcopy(i)
-            try:
-                u['per10'] = (u['mid10'] - u['midprice'])/u['mid10']
-                u['per20'] = (u['mid20'] - u['midprice'])/u['mid20']
-                u['per50'] = (u['mid50'] - u['midprice'])/u['mid50']
-                u['per100'] = (u['mid100'] - u['midprice'])/u['mid100']
-            except ZeroDivisionError:
-                print(u)
-                counter2 += 1
-                if counter2 % 100 == 0:
-                    print('eerr', counter2)
-
-            if counter % 10000 == 0 : print(counter)
-            col2.insert_one(u)
+            work.append(i)
+            c += 1
+            i['per1'] = (work[0]['midprice'] - work[1]['midprice'])/work[0]['midprice']
+            i['per2'] = (work[0]['midprice'] - work[2]['midprice']) / work[0]['midprice']
+            i['per3'] = (work[0]['midprice'] - work[3]['midprice']) / work[0]['midprice']
+            i['per4'] = (work[0]['midprice'] - work[4]['midprice']) / work[0]['midprice']
+            if c % 10000 == 0 : print(c)
+            col2.insert_one(i)
+            work = work[1:]
         return
 
-    def fill_entries(self):
+    def fill_zeros(self):
         col = self.db['percentages']
         col2 = self.db['zero_filled']
         data = col.find()
+        col2.delete_many({})
         prevtime = col.find_one()['_id']
         for i in data:
             time = i['_id']
             t = time-prevtime-30
             t = float(t)/60.0
             t = int(t)
-            prevtime = time
+
+            up = copy.deepcopy(i)
+            up['is_zero'] = False
+            col2.insert_one(up)
             if t > 0:
                 for j in range(t):
-                    time += 60
-                    col2.insert_one({'_id':time,'is_zero':True})
-            up = copy.deepcopy(i)
-            up['is_zero']=False
-            col2.insert_one(up)
+                    prevtime += 60
+                    try:
+                        col2.insert_one({'_id':prevtime,'is_zero':True})
+                    except:
+                        pass
+            prevtime = time
 
     def create_entries(self):
         col = self.db['zero_filled']
         col2 = self.db['entries']
         data = col.find()
+        col2.delete_many({})
         work = []
-        for _ in range(110):
+        c = 0
+        for _ in range(100):
             work.append(data.next())
         for i in data:
+            c += 1
+            if c % 10000 == 0:
+                print(c)
+            zeros = 0
             work = work[1:]
             work.append(i)
             inp = []
             for j in work:
-                bids = []
-                for b in j['bids']:
-                    bids.append(b['price'])
-                    bids.append(b['size'])
-                asks = []
-                for a in j['asks']:
-                    asks = asks + a['price']
-                    asks = asks + a['size']
-                inp.append(asks + bids)
+                if j['is_zero'] == True:
+                    zeros += 1
+                    inp.append([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
+                else:
+                    bids = []
+                    for b in j['bids']:
+                        bids.append(b['price'])
+                        bids.append(b['size'])
+                    asks = []
+                    for a in j['asks']:
+                        asks = [a['price']] + asks
+                        asks = [a['size']] + asks
+                    inp.append(asks + bids)
             up = copy.deepcopy(i)
             up['input'] = inp
-            col2.insert_one(up)
+            if zeros < 8:
+                col2.insert_one(up)
         return
 
+    def split(self):
+        col2 = self.db['entries']
 
 
 
-
-
-
+a = DataPreprocessing('shrimpy_binance_eth_btc','data',10)
+a.create_entries()

@@ -118,6 +118,7 @@ class DataPreprocessing():
         c = 0
         col = self.db['meansd']
         col2 = self.db['normalize']
+        col2.delete_many({})
         data = col.find()
         for i in data:
             c +=1
@@ -232,9 +233,41 @@ class DataPreprocessing():
         return
 
     def split(self):
-        col2 = self.db['entries']
+        col = self.db['entries']
+        train = self.db['train']
+        val = self.db['val']
+        test = self.db['test']
+        train.delete_many()
+        val.delete_many()
+        test.delete_many()
+        count = col.count()
+        data = col.find()
+        counter = 0
+        for i in data:
+            counter += 1
+            if counter < 0.8*count:
+                train.insert_one(i)
+            elif counter < 0.9*count:
+                val.insert_one(i)
+            else:
+                test.insert_one(i)
+            if counter % 10000 == 0:
+                print(counter)
 
-
-
-a = DataPreprocessing('shrimpy_binance_eth_btc','data',10)
-a.create_entries()
+# a = DataPreprocessing('shrimpy_hitbtc_eth_btc','data',10)
+# print(1)
+# a.keep_depth()
+# print(2)
+# a.mean_sd()
+# print(3)
+# a.normalize()
+# print(4)
+# a.create_midprice()
+# print(5)
+# a.create_percentages()
+# print(6)
+# a.fill_zeros()
+# print(7)
+# a.create_entries()
+#
+# a.split()
